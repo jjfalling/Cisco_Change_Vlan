@@ -21,12 +21,14 @@ use vars qw($opt_d $opt_h $opt_n $opt_p $opt_H $opt_w $PROGNAME);
 #Define variables
 my $PROGNAME = "cisco_change_vlan.pl";
 
-#Define oids we are going to use: .1.3.6.1.4.1.9.5.1.4.1.1.11
+#Define oids we are going to use:
 my %oids = (
-	'ifDescr'    						=> ".1.3.6.1.2.1.2.2.1.2",
-	'vlanTrunkPortEncapsulationType'    => ".1.3.6.1.4.1.9.9.46.1.6.1.1.3",
+	'ifDescr'							=> ".1.3.6.1.2.1.2.2.1.2",
+	'vlanTrunkPortEncapsulationType'	=> ".1.3.6.1.4.1.9.9.46.1.6.1.1.3",
 	'vlanPortVlan'						=> ".1.3.6.1.4.1.9.5.1.9.3.1.3",
 	'portIfIndex'						=> ".1.3.6.1.4.1.9.5.1.4.1.1.11",
+	'ifalias'							=> ".1.3.6.1.2.1.31.1.1.1.18",
+	'vtpVlanState'						=> ".1.3.6.1.4.1.9.9.46.1.3.1.1.2",
 );
 
 my %dynamic_oids = ();
@@ -38,6 +40,7 @@ my $opt_vlan;
 my $opt_port;
 my $opt_host;
 my $opt_wcom;
+my $opt_name;
 my $port_number;
 my $value_inter;
 my $human_error;
@@ -55,7 +58,8 @@ GetOptions
 	 "v=s" => \$opt_vlan, "vlan=s" => \$opt_vlan,
 	 "p=s" => \$opt_port, "port=s" => \$opt_port,
 	 "H=s" => \$opt_host, "hostname=s" => \$opt_host,
-	 "w=s" => \$opt_wcom, "wcommunity=s" => \$opt_wcom);
+	 "w=s" => \$opt_wcom, "wcommunity=s" => \$opt_wcom,
+	 "n=s" => \$opt_name, "name=s" => \$opt_name);
 	
 
 #validate input
@@ -66,18 +70,21 @@ print "
 
 This script can be used to change the access vlan of a switch port. I will not change trunk ports. 
 
-Usage: $PROGNAME -H <host> -v vlanID -p port -w community [-d] 
+Usage: $PROGNAME -H <host> -v vlanID -p port -w community -n name [-d] 
 
 -h, --help
    Print this message
 -H, --hostname=HOST
-   Name or IP address of host to check
+   Name or IP address of the switch/router to change the vlan on
 -v, --vlan = Vlan ID
    Vlan ID to set the given port's access vlan to
 -p, --port = port
    Port to change (ex: FastEthernet1/0/2)
 -w, --wcommunity=community
    SNMPv1 write community
+-n, --name=name
+   Device/server name (ex mail04)
+   
 -d, --debug
    Enable debugging (Are you a human? Yes? Great! you will more then likely want to use this flag to see what is going on. Or not if you are utterly boring....)
    
@@ -98,13 +105,18 @@ my $requested_port = $opt_port;
 unless ($opt_wcom) {print colored ['red'],"Write community not specified\n"; print color("reset"); exit (1)};
 my $snmp_community = $opt_wcom;
 
+unless ($opt_name) {print colored ['red'],"Device name not specified\n"; print color("reset"); exit (1)};
+my $device_name = $opt_name;
+
 ########################################################################################
 #start new snmp session
 my($snmp,$snmp_error) = Net::SNMP->session(-hostname => $host,
                                            -community => $snmp_community);
-                                           
+        
+print "$host, $snmp_community";
+                                   
 debugOutput("\n**DEBUGGING IS ENABLED**\n");
-debugOutput("**DEBUG: Attempting to find the requested port: \"$requested_port\" and change the vlan to: \"$vlanid\", please stand by.....");
+debugOutput("**DEBUG: Attempting to find the requested port: \"$requested_port\" and change the vlan to: \"$vlanid\" on $host, please stand by.....");
 
 
 #walk the interface descriptions
@@ -167,17 +179,63 @@ debugOutput("**DEBUG: Object id for $port_number : $sp_number");
 
 #define new hash for dynamic oids
 %dynamic_oids = (
-	'vlanTrunkPortEncapsulationType_port'     => "$oids{vlanTrunkPortEncapsulationType}.$port_number",
-	'ifDescr_port'							  => "$oids{ifDescr}.$port_number",
-	'vlanPortVlan_port'						  => "$oids{vlanPortVlan}.$port_number",
+	'vlanTrunkPortEncapsulationType_port'		=> "$oids{vlanTrunkPortEncapsulationType}.$port_number",
+	'ifDescr_port'								=> "$oids{ifDescr}.$port_number",
+	'vlanPortVlan_port'							=> "$oids{vlanPortVlan}.$port_number",
+	'ifalias_port'								=> "$oids{ifalias}.$port_number",
 );
+
+#get port description
+my $port_alias_h = $snmp->get_request( -varbindlist => [$dynamic_oids{ifalias_port}]);
+checkSNMPStatus("ERROR: could get the port description",2);
+($null_var,my $port_alias) = each %$port_alias_h;
+
+#check to see if the port alias matches the hostname 
+debugOutput("**DEBUG: Checking if switch/router port name matches requested hostname");
+if ($port_alias =~ /$device_name/i) {
+	debugOutput("**DEBUG: Switch/router port name does matches requested hostname");
+
+}
+#hostname does not match. the previous action was to exit, now we ask the user if they want to change it.
+else {
+	if ($opt_d) {
+		print colored ['red'],"The switch port description of the port listed in rack monkey does not match the hostname you provided \(found description: $port_alias\). \n\n"; print color("reset"); print "Do you want to update the port description \(be sure the data in rack monkey is correct!\)? [y/n] ";
+	
+		my $change_ans = <>;
+		$change_ans = lc ($change_ans);
+		chomp ($change_ans);
+	
+		if ($change_ans eq "yes" || $change_ans eq "y") {
+			debugOutput("**DEBUG: Running program to change switch port");
+			system ("/usr/local/adm/snmp_rename_port.pl -H $host -p $requested_port -n \"$device_name\" -w $snmp_community -d");
+			if ($? != 0) { 
+				print colored ['red'],"Failed to change port description.... Exiting...";print color("reset"); debugOutput("\n"); exit 2;
+
+			}
+		debugOutput("**DEBUG: Changed port description successfully");
+
+		}
+	
+		else {
+			print colored ['red'],"User entered no \(or rather a lack of yes\).... Exiting...."; print color("reset"); debugOutput("\n");
+			exit 1;
+
+		}
+	}
+
+	else {
+	print colored ['red'],"The switch port description of the port listed in rack monkey does not match the hostname you provided \(found description: $port_alias\). You must update the switchport or run this script in debug mode. "; print color("reset"); debugOutput("\n");exit 2;
+
+	}
+
+}
 
 #Check to see if port is a trunk port, if it is, we are going to scream, cry, and serpentine
 debugOutput("**DEBUG: checking if $requested_port is an access or trunk port");
 
 #get the ports encap.
 my $port_encap_h = $snmp->get_request( -varbindlist => [$dynamic_oids{vlanTrunkPortEncapsulationType_port}]);
-checkSNMPStatus("ERROR: could not get check encapsulation type",2);
+checkSNMPStatus("ERROR: could not get check encapsulation type. In some odd cases this could mean the requested port is a trunk port and I will not change a trunk port. Please check the provided port, change to an access port if it is set to a trunk port, and try again: ",2);
 
 #check if the port is a trunk or not
 ($null_var,my $port_encap) = each %$port_encap_h;
@@ -187,19 +245,19 @@ if ($port_encap eq 4) {print colored ['red'],"ERROR: Requested port is a trunk p
 
 debugOutput("**DEBUG: Requested port not found to be a trunk port");
 
-
 #get vlans, check if requested vlan already exists
-
 debugOutput("**DEBUG: Looking for vlans");
 
-my $info = $snmp->get_entries(-columns => [$oids{ifDescr}], -startindex => "1", -endindex => "4096" ); #this is so we only look for the first 4096 interfaces. vlans are 1-4096
+#my $info = $snmp->get_entries(-columns => [$oids{ifDescr}], -startindex => "1", -endindex => "4096" ); #this is so we only look for the first 4096 interfaces. vlans are 1-4096
+my $info = $snmp->get_entries(-columns => [$oids{vtpVlanState}]); #looks like the vlan will not show up in ifdescr under some circumstances. trying vtpvlanstate....
 checkSNMPStatus("ERROR: Could not get list of vlans:",2);
 
 my $numofvlans = scalar keys %$info;
 debugOutput("**DEBUG: Found $numofvlans vlans");
 
-LOOK_FOR_VLAN: foreach my $oid (grep /^$oids{ifDescr}\./, keys(%$info)) {
 
+LOOK_FOR_VLAN: foreach my $oid (grep /^$oids{vtpVlanState}\./, keys(%$info)) {
+		
 	my($index) = $oid =~ m|\.(\d+)$|;
 	my $current_vlan = join(',', $index);
 	
@@ -223,7 +281,7 @@ checkSNMPStatus("ERROR: could not get old vlan",2);
 ($null_var,my $old_vlan) = each %$old_vlan_h;
 debugOutput("**DEBUG: Current vlan is $old_vlan");
 
-#set the new port alias, exit if fails
+#set the new port vlan, exit if fails
 debugOutput("**DEBUG: setting new vlan for $requested_port");
 my $snmp_set_status = $snmp->set_request( -varbindlist => [$dynamic_oids{vlanPortVlan_port}, INTEGER, $vlanid]);
 checkSNMPStatus("ERROR: could not set new vlan",2);
@@ -276,3 +334,4 @@ sub debugOutput {
 #Well shucks, we made it all the way down here with no errors. Guess we should exit without an error ;)
 print color("reset");
 exit 0;
+
