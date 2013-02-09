@@ -295,7 +295,7 @@ checkSNMPStatus("ERROR: could confirm new vlan",2);
 
 ##If user requested debugging, give summary
 debugOutput("\n**DEBUG: Old vlan of $requested_port: $old_vlan");
-debugOutput("**DEBUG: New alias of $requested_port: $new_vlan\n\n");
+debugOutput("**DEBUG: New vlan of $requested_port: $new_vlan\n\n");
 debugOutput("**DEBUG: DONE. Please wait while the ethernet port restarts.\n");
 
 #Otherwise, if no debug was requested, say done and exit with status of 0
