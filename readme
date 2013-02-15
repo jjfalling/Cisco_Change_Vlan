@@ -25,4 +25,4 @@ WS-C3750G-48TS-S
 WS-C3560G-48TS-S
 
 Does not work:
-WS-C6506-E (Thinks all ports are trunk ports...)
+WS-C6506-E running 12.2(17r)SX7 (Switch reports all ports are trunk ports [encap type 4]...)
