@@ -10,7 +10,7 @@ Vlan - what vlan you want to change to
 Port - what port you want to change the vlan on (ex: FastEthernet1/0/2, CASE SENSITIVE!)
 Hostname - hostname of the switch
 Wcommunity - snmp write community
-Name - expected name of switch port. This is used with automated tools to keep from changing the wrong port.
+Name - (optional) expected name of switch port. This is used with automated tools to keep from changing the wrong port. Also keeps the switch ports updated. 
 
 
 You will need the following perl libs:
