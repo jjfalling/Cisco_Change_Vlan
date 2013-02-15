@@ -17,3 +17,12 @@ You will need the following perl libs:
 Net::SNMP
 Getops::Long
 Term::ANSIColor
+
+
+Tested on the following switches:
+Works:
+WS-C3750G-48TS-S
+WS-C3560G-48TS-S
+
+Does not work:
+WS-C6506-E (Thinks all ports are trunk ports...)
