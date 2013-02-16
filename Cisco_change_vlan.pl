@@ -83,7 +83,7 @@ Usage: $PROGNAME -H <host> -v vlanID -p port -w community -n name [-d]
 -w, --wcommunity=community
    SNMPv1 write community
 -n, --name=name
-   Device/server name (ex mail04)
+   Device/server name (ex mail04) [optional]
    
 -d, --debug
    Enable debugging (Are you a human? Yes? Great! you will more then likely want to use this flag to see what is going on. Or not if you are utterly boring....)
@@ -105,7 +105,7 @@ my $requested_port = $opt_port;
 unless ($opt_wcom) {print colored ['red'],"Write community not specified\n"; print color("reset"); exit (1)};
 my $snmp_community = $opt_wcom;
 
-unless ($opt_name) {print colored ['red'],"Device name not specified\n"; print color("reset"); exit (1)};
+unless ($opt_name) {$opt_name = ""};
 my $device_name = $opt_name;
 
 ########################################################################################
@@ -190,44 +190,53 @@ my $port_alias_h = $snmp->get_request( -varbindlist => [$dynamic_oids{ifalias_po
 checkSNMPStatus("ERROR: could get the port description",2);
 ($null_var,my $port_alias) = each %$port_alias_h;
 
-#check to see if the port alias matches the hostname 
-debugOutput("**DEBUG: Checking if switch/router port name matches requested hostname");
-if ($port_alias =~ /$device_name/i) {
-	debugOutput("**DEBUG: Switch/router port name does matches requested hostname");
+#check to see if the port alias matches the hostname, if name was provided. 
 
+if ($device_name ne  "") {
+        debugOutput("**DEBUG: Checking if switch/router port name matches requested hostname");
+        if ($port_alias =~ /$device_name/i) {
+                debugOutput("**DEBUG: Switch/router port name does matches requested hostname");
+
+                }
+
+        #hostname does not match. the previous action was to exit, now we ask the user if they want to change it.
+        else {
+                if ($opt_d) {
+                        print colored ['red'],"The switch port description of the port listed in rack monkey does not match the hostname you provided \(found description: $port_alias\). \n\n"; print color("reset"); print "Do you want to update the port description \(be sure the data in rack monkey is correct!\)? [y/n] ";
+
+                        my $change_ans = <>;
+                        $change_ans = lc ($change_ans);
+                        chomp ($change_ans);
+
+                        if ($change_ans eq "yes" || $change_ans eq "y") {
+                                debugOutput("**DEBUG: Running program to change switch port");
+                                system ("/usr/local/adm/snmp_rename_port.pl -H $host -p $requested_port -n \"$device_name\" -w $snmp_community -d");
+                                if ($? != 0) {
+                                        print colored ['red'],"Failed to change port description.... Exiting...";print color("reset"); debugOutput("\n"); exit 2;
+
+                                }
+                        debugOutput("**DEBUG: Changed port description successfully");
+
+                        }
+
+                        else {
+                                print colored ['red'],"User entered no \(or rather a lack of yes\).... Exiting...."; print color("reset"); debugOutput("\n");
+                                exit 1;
+
+                        }
+                }
+
+                else {
+                print colored ['red'],"The switch port description of the port listed in rack monkey does not match the hostname you provided \(found description: $port_alias\). You must update the switchport or run this script in debug mode. "; print color("reset"); debugOutput("\n");exit 2;
+
+                }
+
+        }
 }
-#hostname does not match. the previous action was to exit, now we ask the user if they want to change it.
-else {
-	if ($opt_d) {
-		print colored ['red'],"The switch port description of the port listed in rack monkey does not match the hostname you provided \(found description: $port_alias\). \n\n"; print color("reset"); print "Do you want to update the port description \(be sure the data in rack monkey is correct!\)? [y/n] ";
-	
-		my $change_ans = <>;
-		$change_ans = lc ($change_ans);
-		chomp ($change_ans);
-	
-		if ($change_ans eq "yes" || $change_ans eq "y") {
-			debugOutput("**DEBUG: Running program to change switch port");
-			system ("/usr/local/adm/snmp_rename_port.pl -H $host -p $requested_port -n \"$device_name\" -w $snmp_community -d");
-			if ($? != 0) { 
-				print colored ['red'],"Failed to change port description.... Exiting...";print color("reset"); debugOutput("\n"); exit 2;
-
-			}
-		debugOutput("**DEBUG: Changed port description successfully");
-
-		}
-	
-		else {
-			print colored ['red'],"User entered no \(or rather a lack of yes\).... Exiting...."; print color("reset"); debugOutput("\n");
-			exit 1;
-
-		}
-	}
-
-	else {
-	print colored ['red'],"The switch port description of the port listed in rack monkey does not match the hostname you provided \(found description: $port_alias\). You must update the switchport or run this script in debug mode. "; print color("reset"); debugOutput("\n");exit 2;
-
-	}
-
+#hostname not given for device, skipping check
+else
+{
+        debugOutput("**DEBUG: Hostname not give, skippping hostname check ");
 }
 
 #Check to see if port is a trunk port, if it is, we are going to scream, cry, and serpentine
