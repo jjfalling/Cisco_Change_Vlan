@@ -113,7 +113,6 @@ my $device_name = $opt_name;
 my($snmp,$snmp_error) = Net::SNMP->session(-hostname => $host,
                                            -community => $snmp_community);
         
-print "$host, $snmp_community";
                                    
 debugOutput("\n**DEBUGGING IS ENABLED**\n");
 debugOutput("**DEBUG: Attempting to find the requested port: \"$requested_port\" and change the vlan to: \"$vlanid\" on $host, please stand by.....");
